@@ -272,6 +272,35 @@ public class PublishKafkaRecord_3_0 extends AbstractProcessor implements Verifia
         .required(false)
         .build();
 
+    static final PropertyDescriptor RETRIES = new PropertyDescriptor.Builder()
+        .name(ProducerConfig.RETRIES_CONFIG)
+        .displayName("Retries")
+        .description("Setting a value greater than zero will cause the client to resend any request that fails with a potentially transient error")
+        .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
+        .defaultValue("2147483647")
+        .required(false)
+        .build();
+
+    static final PropertyDescriptor ENABLE_IDEMPOTENCE = new PropertyDescriptor.Builder()
+        .name(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG)
+        .displayName("Enable Idempotence")
+        .description("When set to 'true', the producer will ensure that exactly one copy of each message is written in the stream. "
+                     + "If 'false', producer retries due to broker failures, etc., may write duplicates of the retried message in the stream.")
+        .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
+        .allowableValues("true", "false")
+        .defaultValue("true")
+        .required(false)
+        .build();
+
+    static final PropertyDescriptor MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION = new PropertyDescriptor.Builder()
+        .name(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION)
+        .displayName("Max In Flight Requests per Connection")
+        .description("The maximum number of unacknowledged requests the client will send on a single connection before blocking")
+        .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
+        .defaultValue("5")
+        .required(false)
+        .build();
+
     static final Relationship REL_SUCCESS = new Relationship.Builder()
         .name("success")
         .description("FlowFiles for which all content was sent to Kafka.")
@@ -318,6 +347,9 @@ public class PublishKafkaRecord_3_0 extends AbstractProcessor implements Verifia
         properties.add(PARTITION_CLASS);
         properties.add(PARTITION);
         properties.add(COMPRESSION_CODEC);
+        properties.add(RETRIES);
+        properties.add(ENABLE_IDEMPOTENCE);
+        properties.add(MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION);
 
         PROPERTIES = Collections.unmodifiableList(properties);
 
@@ -388,6 +420,21 @@ public class PublishKafkaRecord_3_0 extends AbstractProcessor implements Verifia
                     .subject("Partition")
                     .valid(false)
                     .explanation("The <Partition> property must be specified if using the Expression Language Partitioning class")
+                    .build());
+            }
+        }
+
+        final String idempotentEnabled = validationContext.getProperty(ENABLE_IDEMPOTENCE).getValue();
+        if (idempotentEnabled.equals("true")) {
+            final String retries = validationContext.getProperty(RETRIES).getValue();
+            final String acks = validationContext.getProperty(DELIVERY_GUARANTEE).getValue();
+            final String maxInFlight = validationContext.getProperty(MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION).getValue();
+            if (!acks.equals("all") || retries.equals("0") || Integer.parseInt(maxInFlight) > 5) {
+                results.add(new ValidationResult.Builder()
+                    .subject("Idempotence")
+                    .valid(false)
+                    .explanation("The <Delivery Guarantee> property must be \"Guarantee Replicated Delivery\", <Retries> must be greater than zero, "
+                                 + "and <Max In Flight Requests per Connection> must be less than or equal to 5 when Idempotence is enabled")
                     .build());
             }
         }
